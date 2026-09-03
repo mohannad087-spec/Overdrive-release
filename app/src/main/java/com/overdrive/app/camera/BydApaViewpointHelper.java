@@ -170,6 +170,20 @@ public final class BydApaViewpointHelper {
     private static final String AVC_PACKAGE = "com.byd.avc";
     private static final long AVC_FOREGROUND_POLL_MS = 500L;
 
+    /**
+     * Safety-net timeout: if the viewpoint has been yielded to the native AVC
+     * UI for longer than this with no foreground-loss transition observed,
+     * force a restore even though the foreground probe still (possibly
+     * incorrectly) reports AVC as foreground. See {@link
+     * Di4AvcViewpointPolicy#isStuckYielded}. Chosen well above the normal
+     * ~500ms poll + 50ms recovery delay so it only ever fires when the
+     * primary signal is stuck, not as a race with the normal path. Worst
+     * case on a unit where AVC genuinely stays foregrounded is a brief
+     * viewpoint flicker every 10s (its red safety chrome re-paints); that is
+     * strictly better than the camera staying uncontrollable indefinitely.
+     */
+    private static final long STALE_YIELD_WATCHDOG_MS = 10_000L;
+
     /** Feature ID for PANORAMA_OUTPUT_STATE — when this transitions to 1
      *  (HAL re-init / native AVM app yielded back to us), we must re-issue
      *  the viewpoint=2012 write or the HAL keeps streaming dashcam. oem
@@ -486,6 +500,7 @@ public final class BydApaViewpointHelper {
                     if (foreground != null) {
                         handleNativeAvcForegroundState(foreground);
                     }
+                    checkStaleYieldWatchdog();
                     Thread.sleep(AVC_FOREGROUND_POLL_MS);
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
@@ -552,6 +567,44 @@ public final class BydApaViewpointHelper {
                     + VIEWPOINT_ON + " after 50ms (rc=" + rc + ")");
             } catch (Throwable t) {
                 logger.warn("Native AVC viewpoint recovery failed: " + t.getMessage());
+            }
+        }
+    }
+
+    /**
+     * Recovers from a yield that never got cleared because the foreground
+     * probe stopped reporting {@code foreground=false} (permission denial,
+     * firmware quirk, or AVC lingering in a state the probe misreads as
+     * foreground). Called once per monitor tick; a no-op unless the yield
+     * has been held past {@link #STALE_YIELD_WATCHDOG_MS}.
+     */
+    private static void checkStaleYieldWatchdog() {
+        synchronized (LOCK) {
+            if (!avcForegroundPolicy.isStuckYielded(
+                    System.currentTimeMillis(), STALE_YIELD_WATCHDOG_MS)) {
+                return;
+            }
+            if (observerSet.isEmpty()) return;
+            Object mgr = ensureAutoManager();
+            if (mgr == null) return;
+            try {
+                int rc = invokeSetIntArray(mgr, DEVICE_PANORAMA,
+                    PANO_VIEWPOINT_SET_FEATURES,
+                    new int[]{ 7, 0, 1, 0, 0 });
+                avcForegroundPolicy.forceRestore();
+                lastAcquireRc = rc;
+                mosaicViewpointConfirmed = (rc == 0);
+                logger.warn("Viewpoint stale-yield watchdog: held yielded for over "
+                    + (STALE_YIELD_WATCHDOG_MS / 1000) + "s with no confirmed"
+                    + " foreground-loss — forcing restore (rc=" + rc + "). The AVC"
+                    + " foreground probe is likely unreliable on this firmware.");
+            } catch (Throwable t) {
+                if (isDeadBinder(t)) {
+                    logger.warn("Stale-yield watchdog hit dead binder — invalidating cached BYDAutoManager");
+                    invalidateAutoManagerInstance();
+                } else {
+                    logger.warn("Stale-yield watchdog restore failed: " + t.getMessage());
+                }
             }
         }
     }
