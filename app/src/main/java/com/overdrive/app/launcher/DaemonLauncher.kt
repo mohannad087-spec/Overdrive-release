@@ -260,7 +260,9 @@ class DaemonLauncher(
                 "    exit 0",
                 "  fi",
                 "",
-                "  echo \"[\$(date)] Starting Daemon...\" >> \"\$LOG_FILE\"",
+                "  RESOLVED_APK=\$(pm path com.overdrive.app 2>/dev/null | grep '/base.apk\$' | head -n 1 | sed 's/^package://')",
+                "  if [ -n \"\$RESOLVED_APK\" ] && [ -f \"\$RESOLVED_APK\" ]; then APK_PATH=\"\$RESOLVED_APK\"; fi",
+                "  echo \"[\$(date)] Starting Daemon from \$APK_PATH...\" >> \"\$LOG_FILE\"",
                 // Backgrounded so the log poller can supervise it while it runs.
                 "  CLASSPATH=\"\$APK_PATH\" app_process \$PROXY_ARGS /system/bin --nice-name=\"\$PROCESS_NAME\" \"\$CLS\" >> \"\$LOG_FILE\" 2>&1 &",
                 "  DAEMON_PID=\$!",
@@ -304,7 +306,7 @@ class DaemonLauncher(
             // Backgrounded (trailing &) so the log poller can supervise it
             // while it runs; $! is captured into DAEMON_PID below.
             val appProcessLine =
-                "  CLASSPATH=$apkPath app_process " +
+                "  CLASSPATH=\$APK_PATH app_process " +
                 "${proxyArgs}/system/bin " +
                 "--nice-name=$TELEGRAM_DAEMON_PROCESS " +
                 "com.overdrive.app.daemon.TelegramBotDaemon >> \"\$LOG_FILE\" 2>&1 &"
@@ -316,8 +318,18 @@ class DaemonLauncher(
                 "LOCK_FILE=\"/data/local/tmp/telegram_bot_daemon.lock\"",
                 "SENTINEL=\"/data/local/tmp/telegram_bot_daemon.disabled\"",
                 "PARKED=\"/data/local/tmp/overdrive_parked_shutdown\"",
+                "FALLBACK_APK_PATH=\"$apkPath\"",
                 "RETRY_COUNT=0",
                 "HEALTHY_UPTIME_SEC=300",
+                "WATCHDOG_PID_FILE=\"/data/local/tmp/telegram_watchdog.pid\"",
+                "if [ -f \"\$WATCHDOG_PID_FILE\" ]; then",
+                "  OLD_WPID=\$(cat \"\$WATCHDOG_PID_FILE\" 2>/dev/null)",
+                "  if [ -n \"\$OLD_WPID\" ] && [ \"\$OLD_WPID\" != \"\$\$\" ] && kill -0 \"\$OLD_WPID\" 2>/dev/null; then",
+                "    echo \"[\$(date)] Another start_telegram.sh watchdog is already running (PID \$OLD_WPID). Exiting.\" >> \"\$LOG_FILE\"",
+                "    exit 0",
+                "  fi",
+                "fi",
+                "echo \$\$ > \"\$WATCHDOG_PID_FILE\"",
                 "",
                 "while true; do",
                 // Catch a log left oversized by a previous run before relaunch;
@@ -327,7 +339,14 @@ class DaemonLauncher(
                 "    echo \"[\$(date)] Daemon disabled by user (sentinel file exists). Exiting watchdog.\" >> \"\$LOG_FILE\"",
                 "    exit 0",
                 "  fi",
-                "  echo \"[\$(date)] Starting TelegramBotDaemon...\" >> \"\$LOG_FILE\"",
+                "  APK_PATH=\$(pm path com.overdrive.app 2>/dev/null | grep '/base.apk\$' | head -n 1 | sed 's/^package://')",
+                "  if [ -z \"\$APK_PATH\" ] && [ -f \"\$FALLBACK_APK_PATH\" ]; then APK_PATH=\"\$FALLBACK_APK_PATH\"; fi",
+                "  if [ -z \"\$APK_PATH\" ]; then",
+                "    echo \"[\$(date)] Installed OverDrive APK not found, retrying in 10s...\" >> \"\$LOG_FILE\"",
+                "    sleep 10",
+                "    continue",
+                "  fi",
+                "  echo \"[\$(date)] Starting TelegramBotDaemon from \$APK_PATH...\" >> \"\$LOG_FILE\"",
                 "  START_EPOCH=\$(awk '{print int(\$1)}' /proc/uptime 2>/dev/null || date +%s)",
                 "",
                 appProcessLine,
@@ -1929,8 +1948,6 @@ class DaemonLauncher(
             // contain the variable assignment text but the kill
             // operates on a PID list, so $$ filtering correctly
             // excludes the priv-shell's PID.
-            "echo \"disabled by ui at \$(date)\" > /data/local/tmp/camera_daemon.disabled; " +
-            "chmod 666 /data/local/tmp/camera_daemon.disabled 2>/dev/null; " +
             "rm -f /data/local/tmp/start_cam_daemon.sh /data/local/tmp/cam_watchdog.pid 2>/dev/null; " +
             "MY_PID=\$\$; ps -A -o PID,ARGS | grep -F cam_daemon | grep -v grep " +
             "| awk '{print \$1}' | while read pid; do " +
@@ -2025,6 +2042,7 @@ class DaemonLauncher(
 
         val killScript = when (processName) {
             ACC_SENTRY_DAEMON_PROCESS ->
+                "[ -f /data/local/tmp/acc_sentry_daemon.disabled ] || " +
                 "echo \"disabled by killDaemon at \$(date)\" > /data/local/tmp/acc_sentry_daemon.disabled\n" +
                 "chmod 666 /data/local/tmp/acc_sentry_daemon.disabled 2>/dev/null\n" +
                 "rm -f /data/local/tmp/start_acc_sentry.sh 2>/dev/null\n" +
@@ -2043,6 +2061,7 @@ class DaemonLauncher(
                 "rm -f /data/local/tmp/camera_daemon.lock 2>/dev/null\n" +
                 "echo done\n"
             else -> // ZROK_PROCESS
+                "[ -f /data/local/tmp/zrok.disabled ] || " +
                 "echo \"disabled by killDaemon at \$(date)\" > /data/local/tmp/zrok.disabled\n" +
                 "chmod 666 /data/local/tmp/zrok.disabled 2>/dev/null\n" +
                 "rm -f /data/local/tmp/start_zrok.sh 2>/dev/null\n" +
@@ -2076,8 +2095,6 @@ class DaemonLauncher(
         // its own `sh -c`. ps+awk+kill keeps the priv-shell alive (PID
         // exclusion via $$) so the trailing lock-rm runs.
         val privKillCmd = if (processName == CAMERA_DAEMON_PROCESS) {
-            "echo \"disabled by ui at \$(date)\" > /data/local/tmp/camera_daemon.disabled; " +
-            "chmod 666 /data/local/tmp/camera_daemon.disabled 2>/dev/null; " +
             "rm -f /data/local/tmp/start_cam_daemon.sh /data/local/tmp/cam_watchdog.pid 2>/dev/null; " +
             "MY_PID=\$\$; ps -A -o PID,ARGS | grep -F cam_daemon | grep -v grep " +
             "| awk '{print \$1}' | while read pid; do " +
@@ -2097,6 +2114,7 @@ class DaemonLauncher(
         // safer (avoids an unnecessary 137 exit on the inner sh that
         // runs the script body).
         val adbKillCmd = if (processName == ACC_SENTRY_DAEMON_PROCESS) {
+            "[ -f /data/local/tmp/acc_sentry_daemon.disabled ] || " +
             "echo \"disabled by killDaemon at \$(date)\" > /data/local/tmp/acc_sentry_daemon.disabled; " +
             "chmod 666 /data/local/tmp/acc_sentry_daemon.disabled 2>/dev/null; " +
             "rm -f /data/local/tmp/start_acc_sentry.sh 2>/dev/null; " +
@@ -2114,6 +2132,7 @@ class DaemonLauncher(
             "sleep 1; " +
             "rm -f /data/local/tmp/camera_daemon.lock 2>/dev/null"
         } else if (processName == ZROK_PROCESS) {
+            "[ -f /data/local/tmp/zrok.disabled ] || " +
             "echo \"disabled by killDaemon at \$(date)\" > /data/local/tmp/zrok.disabled; " +
             "chmod 666 /data/local/tmp/zrok.disabled 2>/dev/null; " +
             "rm -f /data/local/tmp/start_zrok.sh 2>/dev/null; " +

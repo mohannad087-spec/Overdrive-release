@@ -1,5 +1,5 @@
 {
-  "version": 9,
+  "version": 10,
   "default": "seal",
   "baseUrl": "https://github.com/yash-srivastava/Overdrive-release/releases/download/models-v1/",
   "batteryChemistryDefinitions": {
@@ -52,6 +52,24 @@
         "configuration": "European Design and Excellence-AWD 82.5 kWh",
         "sourceUrl": "https://media.byd.com/byd-seal-arrives-in-europe-setting-the-standard-in-breakthrough-technology-and-stunning-design/?lang=eng",
         "verifiedOn": "2026-08-02"
+      },
+      "nominalKwh": 82.5
+    },
+    {
+      "id": "sealion7",
+      "name": "BYD Sealion 7",
+      "file": "seal.glb",
+      "sizeBytes": 1653240,
+      "sha256": "1030260cb7dc6b4483cc4f5fd2feb4746870234a87ee3ccf7f3d71e7bd0178fe",
+      "bundled": true,
+      "batteryChemistry": "lfp",
+      "batteryChemistryEvidence": {
+        "authority": "BYD",
+        "technology": "blade",
+        "nominalKwh": 82.5,
+        "configuration": "European Comfort / Design / Excellence AWD 82.5 kWh Blade",
+        "sourceUrl": "https://media.byd.com/all-new-byd-sealion-7-arrives-in-europe/?lang=eng",
+        "verifiedOn": "2026-08-27"
       },
       "nominalKwh": 82.5
     },
@@ -127,6 +145,24 @@
         "verifiedOn": "2026-08-02"
       },
       "nominalKwh": 60.48
+    },
+    {
+      "id": "atto2",
+      "name": "BYD Atto 2",
+      "file": "atto2.glb",
+      "sizeBytes": 1244776,
+      "sha256": "17840d59fda3870dc17c3b2a2c86ac940ce3211d4e17d6e31c72bc2ff0300afb",
+      "bundled": false,
+      "batteryChemistry": "lfp",
+      "batteryChemistryEvidence": {
+        "authority": "BYD",
+        "technology": "blade",
+        "nominalKwh": 45.1,
+        "configuration": "European 45.1 kWh Blade Battery",
+        "sourceUrl": "https://www.byd.com/es-es/vehiculos-electricos/atto-2.html",
+        "verifiedOn": "2026-09-04"
+      },
+      "nominalKwh": 45.1
     },
     {
       "id": "han",
