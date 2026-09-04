@@ -2474,30 +2474,6 @@ public class SurveillanceApiHandler {
             return;
         }
 
-        // Same additive, best-effort OEM direction switch as the Live View
-        // path (StreamingApiHandler.handleStreamViewMode) — see
-        // OemPanoViewSwitcher's javadoc. Gated to dilink4; silent no-op
-        // everywhere else, including on units where the mosaic already
-        // works (this quadrant order matches sendQuadrantFromMosaic's
-        // crop math: 0=Front, 1=Right, 2=Rear, 3=Left).
-        try {
-            org.json.JSONObject camCfg = com.overdrive.app.config.UnifiedConfigManager
-                .loadConfig().optJSONObject("camera");
-            if (camCfg != null && "dilink4".equalsIgnoreCase(
-                    camCfg.optString("cameraMode", "default"))) {
-                com.overdrive.app.camera.CameraVirtualView view;
-                switch (quadrant) {
-                    case 1:  view = com.overdrive.app.camera.CameraVirtualView.RIGHT; break;
-                    case 2:  view = com.overdrive.app.camera.CameraVirtualView.REAR;  break;
-                    case 3:  view = com.overdrive.app.camera.CameraVirtualView.LEFT;  break;
-                    default: view = com.overdrive.app.camera.CameraVirtualView.FRONT; break;
-                }
-                com.overdrive.app.camera.OemPanoViewSwitcher.setCameraDirection(view);
-            }
-        } catch (Throwable t) {
-            CameraDaemon.log("OemPanoViewSwitcher call failed (ROI snapshot): " + t.getMessage());
-        }
-
         // Try live mosaic frame first
         byte[] mosaicRgb = null;
         GpuSurveillancePipeline gpuPipeline = CameraDaemon.getGpuPipeline();
