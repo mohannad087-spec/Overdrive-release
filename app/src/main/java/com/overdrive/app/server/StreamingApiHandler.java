@@ -1869,6 +1869,37 @@ public class StreamingApiHandler {
         int prevView = pipeline.getStreamViewMode();
 
         pipeline.setStreamViewMode(viewMode);
+
+        // Experimental, additive: on byd_apa units where the DiLink 4
+        // mosaic-viewpoint handshake (BydApaViewpointHelper) never gets the
+        // HAL out of single-camera mode, the single shared feed can still
+        // be steered directly via IBYDAutoPanoService — the same service
+        // the OEM panorama app itself uses. This is tried ALONGSIDE the
+        // mosaic-quadrant switch above, never instead of it: on a unit
+        // where the mosaic path already works this call should simply
+        // fail to transact (silently, per OemPanoViewSwitcher) since a
+        // real 2x2 producer implies this OEM service isn't the active
+        // arbiter. Gated to dilink4 so legacy cars never attempt it.
+        if (viewMode >= 1 && viewMode <= 4) {
+            try {
+                org.json.JSONObject camCfg = com.overdrive.app.config.UnifiedConfigManager
+                    .loadConfig().optJSONObject("camera");
+                if (camCfg != null && "dilink4".equalsIgnoreCase(
+                        camCfg.optString("cameraMode", "default"))) {
+                    com.overdrive.app.camera.CameraVirtualView view;
+                    switch (viewMode) {
+                        case 1:  view = com.overdrive.app.camera.CameraVirtualView.FRONT; break;
+                        case 2:  view = com.overdrive.app.camera.CameraVirtualView.RIGHT; break;
+                        case 3:  view = com.overdrive.app.camera.CameraVirtualView.REAR;  break;
+                        default: view = com.overdrive.app.camera.CameraVirtualView.LEFT;  break;
+                    }
+                    com.overdrive.app.camera.OemPanoViewSwitcher.setCameraDirection(view);
+                }
+            } catch (Throwable t) {
+                CameraDaemon.log("OemPanoViewSwitcher call failed: " + t.getMessage());
+            }
+        }
+
         // Blind-spot views (7=Rear+Left, 8=Right+Rear): apply the user's SAVED
         // panorama calibration from the 'blindspot' UCM section so the stitch
         // looks right without the debug editor open. forceReload first — the web
