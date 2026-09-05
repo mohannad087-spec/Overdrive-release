@@ -2014,6 +2014,32 @@ public class StreamingApiHandler {
 
         pipeline.setStreamViewMode(viewMode);
 
+        // Extra fallback, additive to the official passive-APA broadcast
+        // pipeline.setStreamViewMode() already triggered above: on this
+        // unit the official AUTO_VIDEO_BUTTON path may not be enough, so
+        // also try IBYDAutoPanoService directly (see OemPanoViewSwitcher's
+        // javadoc). Gated to dilink4; silently fails to transact and is a
+        // no-op wherever the official path already works.
+        if (viewMode >= 1 && viewMode <= 4) {
+            try {
+                org.json.JSONObject camCfg = com.overdrive.app.config.UnifiedConfigManager
+                    .loadConfig().optJSONObject("camera");
+                if (camCfg != null && "dilink4".equalsIgnoreCase(
+                        camCfg.optString("cameraMode", "default"))) {
+                    com.overdrive.app.camera.CameraVirtualView view;
+                    switch (viewMode) {
+                        case 1:  view = com.overdrive.app.camera.CameraVirtualView.FRONT; break;
+                        case 2:  view = com.overdrive.app.camera.CameraVirtualView.RIGHT; break;
+                        case 3:  view = com.overdrive.app.camera.CameraVirtualView.REAR;  break;
+                        default: view = com.overdrive.app.camera.CameraVirtualView.LEFT;  break;
+                    }
+                    com.overdrive.app.camera.OemPanoViewSwitcher.setCameraDirection(view);
+                }
+            } catch (Throwable t) {
+                CameraDaemon.log("OemPanoViewSwitcher call failed: " + t.getMessage());
+            }
+        }
+
         // Blind-spot views (7=Rear+Left, 8=Right+Rear): apply the user's SAVED
         // panorama calibration from the 'blindspot' UCM section so the stitch
         // looks right without the debug editor open. forceReload first — the web
